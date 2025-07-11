@@ -1,41 +1,86 @@
-name: Update IP List
+name: Update IP List (Optimized)
 
 on:
-  #schedule:
-    #- cron: '0 */3 * * *' # 每3小时运行一次
-  workflow_dispatch: # 允许手动触发
-  #push: # 允许提交触发
+  # 定时触发：每天0点和12点各运行一次
+  schedule:
+    - cron: '0 0,12 * * *'
+  # 手动触发
+  workflow_dispatch:
+  # 代码提交触发（可选，取消注释后启用）
+  # push:
+  #   branches:
+  #     - main
 
 jobs:
-
   update-ip-list:
     runs-on: ubuntu-latest
     
+    # 失败时发送通知
+    if: failure()
+    outputs:
+      error-message: ${{ job.status }}
+    
     steps:
-    - uses: actions/checkout@v3
-      
+    - name: Check out repository
+      uses: actions/checkout@v3
+      with:
+        # 允许写入仓库（用于推送更改）
+        persist-credentials: true
+    
     - name: Set up Python
       uses: actions/setup-python@v4
       with:
         python-version: '3.9'
-        
+        # 缓存Python依赖，加速后续运行
+        cache: 'pip'
+        cache-dependency-path: requirements.txt
+    
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install requests
-        pip install beautifulsoup4
-        
-    - name: Run script
-      run: python ${{ github.workspace }}/collect_ips.py
-        
+        # 从requirements.txt安装依赖（推荐方式）
+        pip install -r requirements.txt || pip install requests beautifulsoup4
+      # 缓存依赖，避免重复安装
+      env:
+        PYTHONUSERBASE: ${{ github.workspace }}/.local
+      shell: bash
+    
+    - name: Run IP collection script
+      run: |
+        # 确保脚本路径正确
+        if [ -f "${{ github.workspace }}/collect_ips.py" ]; then
+          python "${{ github.workspace }}/collect_ips.py"
+        else
+          echo "Error: collect_ips.py not found!"
+          exit 1
+        fi
+      env:
+        # 可添加环境变量供脚本使用
+        LOG_LEVEL: INFO
+    
     - name: Commit and push changes
       run: |
-        git config --global user.email "tianshideyou@proton.me"
-        git config --global user.name "tianshipapa"
-        if [ -n "$(git status --porcelain)" ]; then
+        # 配置Git用户信息（建议使用仓库secret存储敏感信息）
+        git config --global user.email ${{ secrets.GIT_EMAIL || "tianshideyou@proton.me" }}
+        git config --global user.name ${{ secrets.GIT_NAME || "tianshipapa" }}
+        
+        # 检查文件变化
+        CHANGED_FILES=$(git status --porcelain ip.txt)
+        if [ -n "$CHANGED_FILES" ]; then
+          echo "Detected changes in ip.txt"
           git add ip.txt
-          git commit -m "Automatic update"
-          git push
+          # 生成带时间戳的提交信息
+          git commit -m "Automatic update: $(date +'%Y-%m-%d %H:%M:%S')"
+          
+          # 处理推送错误
+          if ! git push; then
+            echo "Push failed, trying again..."
+            # 重试推送（解决偶尔的网络问题）
+            git push || echo "Second push failed, giving up."
+          fi
         else
-          echo "No changes detected, skipping commit."
+          echo "No changes in ip.txt, skipping commit."
         fi
+      # 确保Git能访问远程仓库
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
