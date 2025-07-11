@@ -59,8 +59,8 @@ jobs:
     - name: Commit and push changes
       run: |
         # 配置Git用户信息（建议使用仓库secret存储敏感信息）
-        git config --global user.email ${{ secrets.GIT_EMAIL || "tianshideyou@proton.me" }}
-        git config --global user.name ${{ secrets.GIT_NAME || "tianshipapa" }}
+        git config --global user.email ${{ secrets.GIT_EMAIL || "lisxy102@gmail.com" }}
+        git config --global user.name ${{ secrets.GIT_NAME || "lisxy" }}
         
         # 检查文件变化
         CHANGED_FILES=$(git status --porcelain ip.txt)
