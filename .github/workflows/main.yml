@@ -14,12 +14,6 @@ on:
 jobs:
   update-ip-list:
     runs-on: ubuntu-latest
-    
-    # 失败时发送通知
-    if: failure()
-    outputs:
-      error-message: ${{ job.status }}
-    
     steps:
     - name: Check out repository
       uses: actions/checkout@v3
@@ -38,8 +32,12 @@ jobs:
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        # 从requirements.txt安装依赖（推荐方式）
-        pip install -r requirements.txt || pip install requests beautifulsoup4
+        if [ -f "requirements.txt" ]; then
+          pip install -r requirements.txt
+        else
+          echo "requirements.txt not found, installing basic dependencies..."
+          pip install requests beautifulsoup4
+        fi
       # 缓存依赖，避免重复安装
       env:
         PYTHONUSERBASE: ${{ github.workspace }}/.local
@@ -51,7 +49,7 @@ jobs:
         if [ -f "${{ github.workspace }}/collect_ips.py" ]; then
           python "${{ github.workspace }}/collect_ips.py"
         else
-          echo "Error: collect_ips.py not found!"
+          echo "Error: collect_ips.py not found in the repository!"
           exit 1
         fi
       env:
@@ -73,14 +71,35 @@ jobs:
           git commit -m "Automatic update: $(date +'%Y-%m-%d %H:%M:%S')"
           
           # 处理推送错误
-          if ! git push; then
-            echo "Push failed, trying again..."
-            # 重试推送（解决偶尔的网络问题）
-            git push || echo "Second push failed, giving up."
-          fi
+          PUSH_ATTEMPTS=0
+          MAX_ATTEMPTS=2
+          while [ $PUSH_ATTEMPTS -lt $MAX_ATTEMPTS ]; do
+            if git push; then
+              echo "Push successful."
+              break
+            else
+              PUSH_ATTEMPTS=$((PUSH_ATTEMPTS + 1))
+              if [ $PUSH_ATTEMPTS -lt $MAX_ATTEMPTS ]; then
+                echo "Push attempt $PUSH_ATTEMPTS failed, trying again..."
+              else
+                echo "Push failed after $MAX_ATTEMPTS attempts, giving up."
+                exit 1
+              fi
+            fi
+          done
         else
           echo "No changes in ip.txt, skipping commit."
         fi
       # 确保Git能访问远程仓库
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  notify-on-failure:
+    runs-on: ubuntu-latest
+    needs: update-ip-list
+    if: needs.update-ip-list.result == 'failure'
+    steps:
+      - name: Send failure notification
+        run: |
+          echo "The 'update-ip-list' job has failed."
+          # 这里可以添加更多的通知逻辑，如发送邮件、Slack消息等
