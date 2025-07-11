@@ -48,8 +48,12 @@ jobs:
 
     - name: Commit and push changes
       run: |
-        git config --global user.email ${{ secrets.GIT_EMAIL || "tianshideyou@proton.me" }}
-        git config --global user.name ${{ secrets.GIT_NAME || "tianshipapa" }}
+        # 安全设置默认值（确保字符串闭合且无语法错误）
+        EMAIL=${{ secrets.GIT_EMAIL || 'your-email@example.com' }}
+        NAME=${{ secrets.GIT_NAME || 'Your Name' }}
+    
+        git config --global user.email "$EMAIL"
+        git config --global user.name "$NAME"
         CHANGED_FILES=$(git status --porcelain ip.txt)
         if [ -n "$CHANGED_FILES" ]; then
           echo "Detected changes in ip.txt"
